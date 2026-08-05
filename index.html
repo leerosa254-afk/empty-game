@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>이심전심 캐치마인드! (Multiplayer)</title>
+    <!-- 폰트 및 스타일 유지 -->
+    <link href="https://fonts.googleapis.com/css2?family=Jua&family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { 'jua': ['Jua', 'sans-serif'], 'nunito': ['Nunito', 'sans-serif'], },
+                    colors: { brand: { light: '#FFF9E6', yellow: '#FFD166', orange: '#F78C6B', pink: '#EF476F', blue: '#118AB2', dark: '#073B4C' } },
+                    animation: { 'bounce-slow': 'bounce 3s infinite', 'wiggle': 'wiggle 1s ease-in-out infinite', 'pop-in': 'popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards', },
+                    keyframes: { wiggle: { '0%, 100%': { transform: 'rotate(-3deg)' }, '50%': { transform: 'rotate(3deg)' }, }, popIn: { '0%': { opacity: 0, transform: 'scale(0.5)' }, '100%': { opacity: 1, transform: 'scale(1)' }, } }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Jua', sans-serif; background-color: #FFF9E6; color: #073B4C; overflow-x: hidden; touch-action: pan-x pan-y; }
+        .game-btn { transition: all 0.1s ease; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
+        .game-btn:active { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0.2); }
+        .game-panel { border: 4px solid #073B4C; border-radius: 1.5rem; box-shadow: 6px 6px 0 rgba(0,0,0,0.1); }
+        #drawingCanvas { touch-action: none; background-color: white; border: 3px dashed #118AB2; border-radius: 1rem; cursor: crosshair; }
+        .screen { display: none; min-height: 100vh; padding: 1rem; }
+        .screen.active { display: flex; flex-direction: column; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .bubble { position: relative; background: white; border-radius: .4em; padding: 0.5rem 1rem; border: 2px solid #073B4C; display: inline-block; margin-bottom: 0.5rem; }
+        .bubble:after { content: ''; position: absolute; bottom: 0; left: 50%; width: 0; height: 0; border: 10px solid transparent; border-top-color: white; border-bottom: 0; border-left: 0; margin-left: -5px; margin-bottom: -10px; }
+        .bubble:before { content: ''; position: absolute; bottom: 0; left: 50%; width: 0; height: 0; border: 12px solid transparent; border-top-color: #073B4C; border-bottom: 0; border-left: 0; margin-left: -6px; margin-bottom: -12px; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #FFF9E6; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #FFD166; border-radius: 10px; border: 2px solid #073B4C; }
+        .shake-warning { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; color: #EF476F; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+    <!-- SCREEN 1: LOBBY -->
+    <div id="screen-lobby" class="screen active justify-center items-center relative overflow-hidden">
+        <div class="absolute top-10 left-10 text-brand-pink text-4xl animate-bounce-slow opacity-50"><i class="fa-solid fa-heart"></i></div>
+        <div class="absolute bottom-20 right-10 text-brand-blue text-5xl animate-wiggle opacity-50"><i class="fa-solid fa-face-smile-beam"></i></div>
+        
+        <div class="text-center z-10 animate-pop-in">
+            <h1 class="text-5xl md:text-7xl font-bold mb-2 text-brand-dark drop-shadow-md">
+                이심전심<br><span class="text-brand-orange text-6xl md:text-8xl">캐치마인드!</span>
+            </h1>
+            <p class="text-lg md:text-xl text-brand-blue mb-8 font-nunito font-bold">진짜 친구들과 멀티플레이로 즐겨봐!</p>
+            
+            <div class="game-panel bg-white p-6 max-w-sm mx-auto w-full">
+                <input type="text" id="playerNameInput" placeholder="내 이름(별명) 입력" class="w-full text-center text-xl p-3 border-4 border-brand-dark rounded-xl mb-4 focus:outline-none focus:border-brand-orange bg-gray-50">
+                <div class="flex flex-col gap-3">
+                    <button onclick="app.createRoom()" class="game-btn w-full bg-brand-yellow text-brand-dark border-4 border-brand-dark rounded-xl py-3 text-xl font-bold hover:bg-yellow-300">
+                        <i class="fa-solid fa-crown mr-2"></i>방 만들기
+                    </button>
+                    <div class="flex gap-2">
+                        <input type="text" id="roomCodeInput" placeholder="참여 코드" class="w-2/3 text-center text-lg p-2 border-4 border-brand-dark rounded-xl focus:outline-none focus:border-brand-blue uppercase">
+                        <button onclick="app.joinRoom()" class="game-btn w-1/3 bg-brand-blue text-white border-4 border-brand-dark rounded-xl py-2 text-lg font-bold hover:bg-blue-600">입장</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 2: WAITING ROOM -->
+    <div id="screen-waiting" class="screen bg-brand-blue text-white">
+        <div class="max-w-3xl mx-auto w-full flex-grow flex flex-col pt-4">
+            <div class="flex justify-between items-center mb-6 game-panel bg-brand-dark p-4">
+                <div>
+                    <h2 class="text-2xl font-bold">대기실</h2>
+                    <p class="text-brand-yellow text-sm font-nunito">친구들에게 코드를 알려줘!</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm opacity-80">참여 코드</p>
+                    <div class="flex items-center gap-2">
+                        <span id="displayRoomCode" class="text-3xl font-bold text-brand-pink bg-white px-3 py-1 rounded-lg border-2 border-brand-dark">ABCD</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="game-panel bg-white text-brand-dark p-6 flex-grow flex flex-col">
+                <div class="flex justify-between items-end mb-4 border-b-2 border-gray-200 pb-2">
+                    <h3 class="text-xl"><i class="fa-solid fa-users mr-2 text-brand-orange"></i>참가자 (<span id="playerCount">1</span>명)</h3>
+                </div>
+                <ul id="playerList" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto flex-grow p-2"></ul>
+            </div>
+
+            <div class="mt-6 flex gap-4 justify-center pb-8">
+                <button onclick="location.reload()" class="game-btn bg-gray-300 text-brand-dark border-4 border-brand-dark rounded-xl py-3 px-6 text-xl font-bold">나가기</button>
+                <button id="btnStartGame" onclick="app.requestStartGame()" class="game-btn bg-brand-pink text-white border-4 border-brand-dark rounded-xl py-3 px-8 text-xl font-bold hidden"><i class="fa-solid fa-play mr-2"></i>게임 시작!</button>
+                <p id="waitingMsg" class="py-3 px-6 text-xl font-bold bg-brand-dark rounded-xl">방장이 시작하길 기다리는 중...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: GAME -->
+    <div id="screen-game" class="screen bg-gray-100">
+        <div class="max-w-5xl mx-auto w-full flex-grow flex flex-col md:flex-row gap-4 pt-2 pb-2 h-full">
+            
+            <!-- 캔버스 및 툴 영역 -->
+            <div class="flex-grow flex flex-col gap-2 md:w-2/3 h-full">
+                <div class="game-panel bg-white p-3 flex justify-between items-center shrink-0">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-brand-orange text-white px-3 py-1 rounded-full font-bold border-2 border-brand-dark">Round <span id="roundDisplay">1/5</span></div>
+                        <div id="turnIndicator" class="font-bold text-lg"><span class="text-brand-blue">현재 턴: </span><span id="currentDrawerName">대기중</span></div>
+                    </div>
+                    <div class="flex items-center gap-2 text-2xl font-bold bg-brand-dark text-white px-4 py-1 rounded-xl border-2 border-brand-dark">
+                        <i class="fa-regular fa-clock text-brand-yellow"></i><span id="timerDisplay">60</span>
+                    </div>
+                </div>
+
+                <div id="drawerInfoArea" class="game-panel bg-brand-yellow p-4 text-center hidden shrink-0 relative overflow-hidden">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-2">상황: <span id="secretSituation" class="bg-white px-2 py-1 rounded-lg border-2">...</span></h2>
+                    <div class="bg-brand-dark text-white inline-block px-4 py-2 rounded-xl border-2 border-white shadow-md">표현할 감정: <span id="secretEmotion" class="text-brand-pink text-2xl ml-2">...</span></div>
+                </div>
+                
+                <div id="guesserInfoArea" class="game-panel bg-brand-blue text-white p-4 text-center shrink-0">
+                    <p class="font-nunito text-sm mb-1 opacity-80">어떤 감정일까?</p>
+                    <h2 class="text-2xl font-bold">상황: <span id="guessSituation" class="text-brand-yellow underline">...</span></h2>
+                </div>
+
+                <div class="relative flex-grow bg-white rounded-xl border-4 border-brand-dark shadow-inner min-h-[300px] flex flex-col">
+                    <canvas id="drawingCanvas" class="w-full h-full rounded-lg"></canvas>
+                    
+                    <div id="canvasOverlay" class="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center flex-col hidden z-20">
+                        <div class="text-6xl mb-4 animate-bounce" id="overlayIcon">🎉</div>
+                        <h2 id="overlayText" class="text-3xl font-bold text-white text-center px-4 drop-shadow-md">정답!</h2>
+                    </div>
+
+                    <div id="drawingTools" class="absolute bottom-2 left-2 right-2 bg-white/90 p-2 rounded-xl border-2 border-gray-300 flex justify-between items-center hidden z-10">
+                        <div class="flex gap-2">
+                            <button class="color-btn w-8 h-8 rounded-full border-2 border-brand-dark" style="background-color: #000000;" data-color="#000000"></button>
+                            <button class="color-btn w-8 h-8 rounded-full border-2 border-brand-dark" style="background-color: #EF476F;" data-color="#EF476F"></button>
+                            <button class="color-btn w-8 h-8 rounded-full border-2 border-brand-dark" style="background-color: #118AB2;" data-color="#118AB2"></button>
+                            <button class="color-btn w-8 h-8 rounded-full border-2 border-brand-dark" style="background-color: #06D6A0;" data-color="#06D6A0"></button>
+                            <button class="color-btn w-8 h-8 rounded-full border-2 border-brand-dark" style="background-color: #FFD166;" data-color="#FFD166"></button>
+                        </div>
+                        <div class="flex gap-2 border-l-2 border-gray-300 pl-2">
+                            <button id="btnPen" class="tool-btn bg-gray-200 p-2 rounded-lg border-2 border-brand-dark"><i class="fa-solid fa-pen"></i></button>
+                            <button id="btnEraser" class="tool-btn bg-white p-2 rounded-lg border-2 border-brand-dark"><i class="fa-solid fa-eraser"></i></button>
+                            <button id="btnClear" class="bg-red-100 p-2 rounded-lg border-2 border-red-500 text-red-600"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 채팅 및 점수 영역 -->
+            <div class="md:w-1/3 flex flex-col gap-4 h-full shrink-0">
+                <div class="game-panel bg-white p-3 shrink-0">
+                    <h3 class="text-sm font-bold text-gray-500 mb-2 border-b border-gray-200 pb-1">점수판</h3>
+                    <ul id="gameScoreList" class="flex flex-col gap-1 max-h-24 overflow-y-auto pr-1"></ul>
+                </div>
+
+                <div class="game-panel bg-brand-light flex-grow flex flex-col overflow-hidden relative">
+                    <div id="drawerChatNotice" class="bg-brand-orange text-white text-xs p-1 text-center font-bold hidden absolute top-0 left-0 right-0 z-10">힌트만 줄 수 있어! (감정 단어 금지)</div>
+                    <div id="chatMessages" class="flex-grow p-4 overflow-y-auto flex flex-col gap-2 pt-6"></div>
+                    
+                    <form id="chatForm" class="p-2 bg-white border-t-2 border-gray-200 flex gap-2 shrink-0">
+                        <input type="text" id="chatInput" autocomplete="off" placeholder="채팅 입력..." class="flex-grow p-2 border-2 border-brand-dark rounded-lg">
+                        <button type="submit" class="bg-brand-blue text-white px-3 py-2 rounded-lg border-2 border-brand-dark font-bold"><i class="fa-solid fa-paper-plane"></i></button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 4: RESULT -->
+    <div id="screen-result" class="screen bg-brand-dark text-white justify-center items-center relative">
+        <div class="z-10 w-full max-w-2xl text-center">
+            <h1 class="text-5xl md:text-6xl font-bold mb-2 text-brand-yellow animate-bounce">게임 종료!</h1>
+            <div class="game-panel bg-white text-brand-dark p-6 mb-8 relative mt-8">
+                <i class="fa-solid fa-crown absolute -top-8 left-1/2 transform -translate-x-1/2 text-5xl text-brand-yellow drop-shadow-md z-20"></i>
+                <h2 class="text-2xl font-bold mb-4 border-b-2 border-gray-200 pb-2">최종 순위</h2>
+                <ul id="finalScoreList" class="flex flex-col gap-3"></ul>
+            </div>
+            <button onclick="location.reload()" class="game-btn bg-brand-pink text-white border-4 border-brand-dark rounded-xl py-3 px-8 text-xl font-bold">처음으로</button>
+        </div>
+    </div>
+
+    <script>
+        // Socket.io 클라이언트 연결
+        const socket = io();
+
+        // 🌟 업데이트된 24개의 다채로운 상황 데이터 🌟
+        const gameData = [
+            // --- 기존 4개 ---
+            { situation: "친구가 내 뒷담화를 한 걸 알았을 때", emotion: "배신감", words: ["배신", "배신감", "상처", "실망"] },
+            { situation: "밤늦게 혼자 어두운 골목을 걸을 때", emotion: "무서움", words: ["무서움", "공포", "두려움", "무섭다", "겁"] },
+            { situation: "열심히 준비한 수행평가를 망쳤을 때", emotion: "자책감", words: ["자책", "자책감", "후회", "속상", "실망"] },
+            { situation: "내 생일을 친구들이 몰래 파티해줬을 때", emotion: "감동", words: ["감동", "고마움", "벅참", "행복"] },
+            
+            // --- 중학생 맞춤 신규 20개 ---
+            { situation: "수업 시간에 졸다가 선생님이 질문해서 깼을 때", emotion: "당황스러움", words: ["당황", "당황스럽다", "놀람", "어색", "뻘쭘"] },
+            { situation: "내가 안 했는데 친구가 오해하고 화낼 때", emotion: "억울함", words: ["억울", "억울하다", "답답", "분통"] },
+            { situation: "좋아하는 친구와 우연히 짝꿍이 되었을 때", emotion: "설렘", words: ["설렘", "설렌다", "두근", "심쿵", "기대"] },
+            { situation: "친한 친구가 나보다 다른 친구랑 더 친하게 지낼 때", emotion: "질투심", words: ["질투", "질투심", "시기", "부럽", "샘"] },
+            { situation: "일주일 내내 밤새워 준비한 기말고사가 마침내 끝났을 때", emotion: "후련함", words: ["후련", "후련하다", "시원", "해방", "편안"] },
+            { situation: "열심히 모은 용돈으로 산 물건을 하루 만에 잃어버렸을 때", emotion: "허무함", words: ["허무", "허무하다", "공허", "상실", "절망"] },
+            { situation: "주말에 늦잠 자고 싶은데 학원 보강 가야 할 때", emotion: "귀찮음", words: ["귀찮", "귀찮음", "짜증", "피곤", "성가심"] },
+            { situation: "내일이 수행평가 제출일인데 아직 하나도 안 했을 때", emotion: "막막함", words: ["막막", "막막하다", "답답", "걱정", "근심"] },
+            { situation: "선생님께 내가 한 숨은 선행을 칭찬받았을 때", emotion: "뿌듯함", words: ["뿌듯", "뿌듯하다", "자랑", "자부심", "성취"] },
+            { situation: "친구들끼리 단톡방에서 나만 모르는 이야기로 웃을 때", emotion: "소외감", words: ["소외", "소외감", "외로움", "고립", "왕따"] },
+            { situation: "내일 수학여행 가는 날 밤, 짐을 다 싸고 누웠을 때", emotion: "기대감", words: ["기대", "기대감", "설렘", "신남", "기다림"] },
+            { situation: "식당에서 크게 넘어졌는데 사람들이 다 쳐다볼 때", emotion: "수치심", words: ["수치", "수치심", "부끄", "창피", "민망"] },
+            { situation: "게임 랭크전에서 이기고 있는데 엄마가 컴퓨터를 껐을 때", emotion: "분노", words: ["분노", "화", "짜증", "열받", "빡침"] },
+            { situation: "정말 재밌었던 체육대회가 끝나고 하교할 때", emotion: "아쉬움", words: ["아쉬움", "아쉽다", "섭섭", "미련", "후회"] },
+            { situation: "내 마음을 아무리 설명해도 부모님이 알아주지 않으실 때", emotion: "답답함", words: ["답답", "답답함", "숨막힘", "억울", "속터짐"] },
+            { situation: "내 실수로 우리 반 전체가 단체 기합을 받게 되었을 때", emotion: "미안함", words: ["미안", "미안함", "죄송", "사과", "죄책감"] },
+            { situation: "지각인 줄 알고 뛰어왔는데 선생님이 아직 안 들어오셨을 때", emotion: "안도감", words: ["안도", "안도감", "다행", "휴", "편안"] },
+            { situation: "비 오는 날 하교하는데 나만 우산이 없을 때", emotion: "우울함", words: ["우울", "우울함", "슬픔", "처짐", "외로움"] },
+            { situation: "전학 온 친구가 어떤 성격인지 궁금할 때", emotion: "호기심", words: ["호기심", "궁금", "관심", "흥미"] },
+            { situation: "반장 선거에 나갔는데 생각보다 많은 친구가 나를 쳐다볼 때", emotion: "부담감", words: ["부담", "부담감", "압박", "긴장", "떨림"] }
+        ];
+
+        const avatars = ['🦊', '🐶', '🐱', '🐼', '🐯', '🐰', '🐹', '🐨'];
+
+        // 클라이언트 로컬 상태
+        const appState = {
+            player: { id: null, name: '', isHost: false, score: 0, avatar: '' },
+            room: { code: '', players: [], status: 'lobby' },
+            game: {
+                currentRound: 0, maxRounds: 4, currentDrawerId: null,
+                currentProblem: null, timer: 0, timerInterval: null,
+                isRoundActive: false, guessedCorrectly: []
+            }
+        };
+
+        const app = {
+            init() {
+                this.setupCanvas();
+                this.setupChat();
+                this.setupSocketListeners();
+            },
+
+            switchScreen(screenId) {
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById(screenId).classList.add('active');
+                if(screenId === 'screen-game') this.resizeCanvas();
+            },
+
+            setupSocketListeners() {
+                socket.on('roomJoined', (data) => {
+                    appState.room = data.room;
+                    appState.player = data.me;
+                    this.updateWaitingRoomUI();
+                    this.switchScreen('screen-waiting');
+                });
+
+                socket.on('roomUpdated', (roomData) => {
+                    appState.room = roomData;
+                    const myInfo = roomData.players.find(p => p.id === socket.id);
+                    if(myInfo) appState.player.isHost = myInfo.isHost;
+                    this.updateWaitingRoomUI();
+                });
+
+                socket.on('gameStarted', () => {
+                    appState.room.status = 'playing';
+                    this.switchScreen('screen-game');
+                    if(appState.player.isHost) {
+                        appState.game.currentRound = 0;
+                        appState.room.players.forEach(p => p.score = 0);
+                        this.startNextRoundHost();
+                    }
+                });
+
+                socket.on('gameStateSynced', ({ gameState, players }) => {
+                    appState.game = { ...appState.game, ...gameState };
+                    appState.room.players = players;
+                    
+                    clearInterval(this.localTimerInterval);
+                    const display = document.getElementById('timerDisplay');
+                    display.innerText = appState.game.timer;
+                    if(appState.game.isRoundActive) {
+                        this.localTimerInterval = setInterval(() => {
+                            let current = parseInt(display.innerText) - 1;
+                            if(current < 0) current = 0;
+                            display.innerText = current;
+                        }, 1000);
+                    }
+
+                    this.updateGameUI();
+                });
+
+                socket.on('receiveChat', ({ senderId, message, isHint }) => {
+                    const sender = appState.room.players.find(p => p.id === senderId) || {name: '알수없음', avatar:'👤'};
+                    this.renderChatMessage(sender, message, isHint);
+                });
+
+                socket.on('receiveSystemMessage', ({ message, type }) => {
+                    const chatBox = document.getElementById('chatMessages');
+                    let style = type === 'success' ? 'bg-green-100 text-green-700' : 'bg-brand-yellow/30 text-brand-dark';
+                    chatBox.innerHTML += `<div class="text-center font-bold my-1 ${style} rounded p-1 text-sm">${message}</div>`;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+
+                socket.on('errorMsg', (msg) => alert(msg));
+            },
+
+            createRoom() {
+                const name = document.getElementById('playerNameInput').value.trim();
+                if(!name) return alert("이름을 입력해줘!");
+                const avatar = avatars[Math.floor(Math.random() * avatars.length)];
+                socket.emit('createRoom', { name, avatar });
+            },
+
+            joinRoom() {
+                const name = document.getElementById('playerNameInput').value.trim();
+                const code = document.getElementById('roomCodeInput').value.trim();
+                if(!name || !code) return alert("이름과 코드를 모두 입력해줘!");
+                const avatar = avatars[Math.floor(Math.random() * avatars.length)];
+                socket.emit('joinRoom', { code, playerData: { name, avatar } });
+            },
+
+            updateWaitingRoomUI() {
+                document.getElementById('displayRoomCode').innerText = appState.room.code;
+                document.getElementById('playerCount').innerText = appState.room.players.length;
+                
+                const list = document.getElementById('playerList');
+                list.innerHTML = '';
+                appState.room.players.forEach((p) => {
+                    list.innerHTML += `
+                        <li class="bg-gray-100 rounded-xl p-3 text-center border-2 border-gray-300 relative">
+                            ${p.isHost ? '<i class="fa-solid fa-crown absolute -top-3 -left-3 text-brand-yellow text-2xl"></i>' : ''}
+                            <div class="text-3xl mb-1">${p.avatar}</div>
+                            <div class="font-bold truncate text-sm">${p.name} ${p.id === socket.id ? '(나)' : ''}</div>
+                        </li>
+                    `;
+                });
+
+                if(appState.player.isHost) {
+                    document.getElementById('btnStartGame').classList.remove('hidden');
+                    document.getElementById('waitingMsg').classList.add('hidden');
+                } else {
+                    document.getElementById('btnStartGame').classList.add('hidden');
+                    document.getElementById('waitingMsg').classList.remove('hidden');
+                }
+            },
+
+            requestStartGame() {
+                if(appState.room.players.length < 2) return alert("최소 2명이 필요합니다!");
+                socket.emit('startGame', appState.room.code);
+            },
+
+            startNextRoundHost() {
+                appState.game.currentRound++;
+                if (appState.game.currentRound > appState.game.maxRounds) {
+                    appState.game.isRoundActive = false;
+                    this.syncState();
+                    setTimeout(() => this.endGame(), 1000);
+                    return;
+                }
+
+                appState.game.isRoundActive = true;
+                appState.game.guessedCorrectly = [];
+                appState.game.timer = 60;
+                
+                const drawerIndex = (appState.game.currentRound - 1) % appState.room.players.length;
+                const drawer = appState.room.players[drawerIndex];
+                appState.game.currentDrawerId = drawer.id;
+                
+                // 24개의 문제 중 무작위 출제
+                appState.game.currentProblem = gameData[Math.floor(Math.random() * gameData.length)];
+
+                socket.emit('clearCanvas', appState.room.code);
+                socket.emit('systemMessage', { roomCode: appState.room.code, message: `📢 라운드 ${appState.game.currentRound} 시작! 술래는 [${drawer.name}]님!`, type: 'info' });
+
+                this.syncState();
+
+                clearInterval(this.hostTimerInterval);
+                this.hostTimerInterval = setInterval(() => {
+                    appState.game.timer--;
+                    if(appState.game.timer % 5 === 0) this.syncState();
+                    
+                    if(appState.game.timer <= 0) {
+                        clearInterval(this.hostTimerInterval);
+                        this.endRoundHost("시간 초과!");
+                    }
+                }, 1000);
+            },
+
+            endRoundHost(reason) {
+                appState.game.isRoundActive = false;
+                this.syncState();
+                
+                const emotion = appState.game.currentProblem.emotion;
+                socket.emit('systemMessage', { roomCode: appState.room.code, message: `🛑 라운드 종료! (정답: ${emotion}) - ${reason}`, type: 'info' });
+                
+                setTimeout(() => {
+                    if(appState.player.isHost) this.startNextRoundHost();
+                }, 4000);
+            },
+
+            syncState() {
+                const stateToSend = {
+                    currentRound: appState.game.currentRound,
+                    maxRounds: appState.game.maxRounds,
+                    currentDrawerId: appState.game.currentDrawerId,
+                    currentProblem: appState.game.currentProblem,
+                    timer: appState.game.timer,
+                    isRoundActive: appState.game.isRoundActive,
+                    guessedCorrectly: appState.game.guessedCorrectly
+                };
+                socket.emit('syncGameState', { roomCode: appState.room.code, gameState: stateToSend, players: appState.room.players });
+            },
+
+            updateGameUI() {
+                const drawer = appState.room.players.find(p => p.id === appState.game.currentDrawerId);
+                if(!drawer) return;
+
+                const isMeDrawer = socket.id === drawer.id;
+                document.getElementById('roundDisplay').innerText = `${appState.game.currentRound}/${appState.game.maxRounds}`;
+                document.getElementById('currentDrawerName').innerText = drawer.name;
+                
+                const drawerArea = document.getElementById('drawerInfoArea');
+                const guesserArea = document.getElementById('guesserInfoArea');
+                const tools = document.getElementById('drawingTools');
+                const notice = document.getElementById('drawerChatNotice');
+                const overlay = document.getElementById('canvasOverlay');
+
+                if(!appState.game.isRoundActive && appState.game.currentProblem) {
+                    overlay.classList.remove('hidden');
+                    document.getElementById('overlayText').innerHTML = `정답은 '${appState.game.currentProblem.emotion}' 였습니다.`;
+                } else {
+                    overlay.classList.add('hidden');
+                }
+
+                if (isMeDrawer) {
+                    drawerArea.classList.remove('hidden'); guesserArea.classList.add('hidden'); tools.classList.remove('hidden'); notice.classList.remove('hidden');
+                    document.getElementById('secretSituation').innerText = appState.game.currentProblem.situation;
+                    document.getElementById('secretEmotion').innerText = appState.game.currentProblem.emotion;
+                    document.getElementById('chatInput').placeholder = "힌트 입력 (감정 단어 금지!)";
+                    this.ctx.isDrawingEnabled = appState.game.isRoundActive;
+                } else {
+                    drawerArea.classList.add('hidden'); guesserArea.classList.remove('hidden'); tools.classList.add('hidden'); notice.classList.add('hidden');
+                    document.getElementById('guessSituation').innerText = appState.game.currentProblem.situation;
+                    document.getElementById('chatInput').placeholder = "정답이나 채팅 입력...";
+                    this.ctx.isDrawingEnabled = false;
+                }
+
+                const list = document.getElementById('gameScoreList');
+                list.innerHTML = '';
+                [...appState.room.players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
+                    list.innerHTML += `<li class="flex justify-between items-center bg-gray-50 p-1 px-2 rounded border ${p.id===socket.id ? 'border-brand-blue bg-blue-50 font-bold' : ''}"><span>${i+1}. ${p.avatar} ${p.name}</span><span>${p.score}</span></li>`;
+                });
+            },
+
+            setupChat() {
+                const form = document.getElementById('chatForm');
+                const input = document.getElementById('chatInput');
+
+                form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const msg = input.value.trim();
+                    if(!msg) return;
+
+                    const isMeDrawer = socket.id === appState.game.currentDrawerId;
+
+                    if (appState.game.isRoundActive) {
+                        if (isMeDrawer) {
+                            const forbidden = appState.game.currentProblem.words;
+                            if (forbidden.some(w => msg.includes(w))) {
+                                alert("🚨 감정 단어 사용 금지! (감점 5점)");
+                                const me = appState.room.players.find(p=>p.id===socket.id);
+                                me.score = Math.max(0, me.score - 5);
+                                if(appState.player.isHost) this.syncState(); 
+                                input.value = ''; return;
+                            }
+                        } else {
+                            if (msg === appState.game.currentProblem.emotion && !appState.game.guessedCorrectly.includes(socket.id)) {
+                                socket.emit('chatMessage', { roomCode: appState.room.code, message: msg, isHint: false });
+                                if(appState.player.isHost) {
+                                    this.processCorrectAnswer(socket.id);
+                                }
+                                input.value = ''; return;
+                            }
+                        }
+                    }
+
+                    socket.emit('chatMessage', { roomCode: appState.room.code, message: msg, isHint: isMeDrawer });
+                    input.value = '';
+                });
+            },
+
+            renderChatMessage(sender, msg, isHint) {
+                if(appState.player.isHost && appState.game.isRoundActive && sender.id !== appState.game.currentDrawerId) {
+                    if(msg === appState.game.currentProblem.emotion && !appState.game.guessedCorrectly.includes(sender.id)) {
+                        this.processCorrectAnswer(sender.id);
+                        return; 
+                    }
+                }
+
+                const chatBox = document.getElementById('chatMessages');
+                const isMe = sender.id === socket.id;
+                let bubbleClass = isMe ? "bg-brand-yellow text-left" : "bg-white";
+                if(isHint) bubbleClass = "bg-brand-blue text-white font-bold";
+                
+                chatBox.innerHTML += `
+                    <div class="${isMe ? 'self-end text-right' : 'self-start text-left'} max-w-[85%] animate-pop-in">
+                        <span class="text-xs text-gray-500">${sender.avatar} ${sender.name}</span><br>
+                        <div class="bubble ${bubbleClass}">${msg}</div>
+                    </div>
+                `;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            },
+
+            processCorrectAnswer(playerId) {
+                appState.game.guessedCorrectly.push(playerId);
+                const player = appState.room.players.find(p=>p.id === playerId);
+                const drawer = appState.room.players.find(p=>p.id === appState.game.currentDrawerId);
+                
+                player.score += 10 + Math.floor(appState.game.timer/10);
+                if(drawer) drawer.score += 5;
+
+                socket.emit('systemMessage', { roomCode: appState.room.code, message: `🎉 ${player.name} 님이 정답을 맞혔습니다!`, type: 'success' });
+                this.syncState();
+
+                if(appState.game.guessedCorrectly.length >= appState.room.players.length - 1) {
+                    clearInterval(this.hostTimerInterval);
+                    this.endRoundHost("모두 정답!");
+                }
+            },
+
+            setupCanvas() {
+                const canvas = document.getElementById('drawingCanvas');
+                this.ctx = canvas.getContext('2d');
+                this.ctx.isDrawingEnabled = false;
+                this.ctx.lineJoin = 'round'; this.ctx.lineCap = 'round';
+                
+                let isDrawing = false, lastX = 0, lastY = 0, currentColor = '#000000', currentMode = 'pen';
+
+                this.resizeCanvas = () => {
+                    const rect = canvas.getBoundingClientRect();
+                    canvas.width = rect.width; canvas.height = rect.height;
+                    this.ctx.fillStyle = '#ffffff'; this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+                };
+                window.addEventListener('resize', this.resizeCanvas);
+
+                const getPos = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return { x: clientX - rect.left, y: clientY - rect.top, w: canvas.width, h: canvas.height };
+                };
+
+                const startDrawing = (e) => {
+                    if (!this.ctx.isDrawingEnabled) return;
+                    isDrawing = true;
+                    const pos = getPos(e); [lastX, lastY] = [pos.x, pos.y];
+                };
+
+                const draw = (e) => {
+                    if (!isDrawing || !this.ctx.isDrawingEnabled) return;
+                    e.preventDefault();
+                    const pos = getPos(e);
+                    
+                    this.drawLine(lastX, lastY, pos.x, pos.y, currentColor, currentMode === 'eraser');
+                    
+                    socket.emit('draw', {
+                        roomCode: appState.room.code,
+                        drawData: { x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: currentColor, isEraser: currentMode === 'eraser', cw: canvas.width, ch: canvas.height }
+                    });
+                    
+                    [lastX, lastY] = [pos.x, pos.y];
+                };
+
+                const stopDrawing = () => isDrawing = false;
+
+                canvas.addEventListener('mousedown', startDrawing); canvas.addEventListener('mousemove', draw);
+                canvas.addEventListener('mouseup', stopDrawing); canvas.addEventListener('mouseout', stopDrawing);
+                canvas.addEventListener('touchstart', startDrawing, {passive: false}); canvas.addEventListener('touchmove', draw, {passive: false}); canvas.addEventListener('touchend', stopDrawing);
+
+                socket.on('drawUpdate', (data) => {
+                    const ratioX = canvas.width / data.cw;
+                    const ratioY = canvas.height / data.ch;
+                    this.drawLine(data.x0 * ratioX, data.y0 * ratioY, data.x1 * ratioX, data.y1 * ratioY, data.color, data.isEraser);
+                });
+
+                socket.on('canvasCleared', () => {
+                    this.ctx.fillStyle = '#ffffff'; this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+                });
+
+                document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => { currentColor = e.target.dataset.color; currentMode = 'pen'; }));
+                document.getElementById('btnPen').addEventListener('click', () => { currentMode = 'pen'; });
+                document.getElementById('btnEraser').addEventListener('click', () => { currentMode = 'eraser'; });
+                document.getElementById('btnClear').addEventListener('click', () => { 
+                    this.ctx.fillStyle = '#ffffff'; this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    socket.emit('clearCanvas', appState.room.code);
+                });
+            },
+
+            drawLine(x0, y0, x1, y1, color, isEraser) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x0, y0);
+                this.ctx.lineTo(x1, y1);
+                this.ctx.strokeStyle = isEraser ? '#ffffff' : color;
+                this.ctx.lineWidth = isEraser ? 20 : 4;
+                this.ctx.stroke();
+            },
+
+            endGame() {
+                this.switchScreen('screen-result');
+                const list = document.getElementById('finalScoreList');
+                list.innerHTML = '';
+                [...appState.room.players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
+                    list.innerHTML += `<li class="flex justify-between p-3 bg-gray-100 rounded-xl mb-2 text-xl font-bold"><span>${i+1}. ${p.avatar} ${p.name}</span><span>${p.score}pt</span></li>`;
+                });
+            }
+        };
+
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
