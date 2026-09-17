@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>이심전심 캐치마인드! (Multiplayer)</title>
-    <!-- 폰트 및 스타일 유지 -->
     <link href="https://fonts.googleapis.com/css2?family=Jua&family=Nunito:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -122,7 +121,7 @@
                 
                 <div id="guesserInfoArea" class="game-panel bg-brand-blue text-white p-4 text-center shrink-0">
                     <p class="font-nunito text-sm mb-1 opacity-80">어떤 감정일까?</p>
-                    <h2 class="text-2xl font-bold">상황: <span id="guessSituation" class="text-brand-yellow underline">...</span></h2>
+                    <h2 id="guessSituation" class="text-xl md:text-2xl font-bold">...</h2>
                 </div>
 
                 <div class="relative flex-grow bg-white rounded-xl border-4 border-brand-dark shadow-inner min-h-[300px] flex flex-col">
@@ -184,18 +183,9 @@
     </div>
 
     <script>
-        // Socket.io 클라이언트 연결
         const socket = io();
 
-        // 🌟 업데이트된 24개의 다채로운 상황 데이터 🌟
         const gameData = [
-            // --- 기존 4개 ---
-            { situation: "친구가 내 뒷담화를 한 걸 알았을 때", emotion: "배신감", words: ["배신", "배신감", "상처", "실망"] },
-            { situation: "밤늦게 혼자 어두운 골목을 걸을 때", emotion: "무서움", words: ["무서움", "공포", "두려움", "무섭다", "겁"] },
-            { situation: "열심히 준비한 수행평가를 망쳤을 때", emotion: "자책감", words: ["자책", "자책감", "후회", "속상", "실망"] },
-            { situation: "내 생일을 친구들이 몰래 파티해줬을 때", emotion: "감동", words: ["감동", "고마움", "벅참", "행복"] },
-            
-            // --- 중학생 맞춤 신규 20개 ---
             { situation: "수업 시간에 졸다가 선생님이 질문해서 깼을 때", emotion: "당황스러움", words: ["당황", "당황스럽다", "놀람", "어색", "뻘쭘"] },
             { situation: "내가 안 했는데 친구가 오해하고 화낼 때", emotion: "억울함", words: ["억울", "억울하다", "답답", "분통"] },
             { situation: "좋아하는 친구와 우연히 짝꿍이 되었을 때", emotion: "설렘", words: ["설렘", "설렌다", "두근", "심쿵", "기대"] },
@@ -220,7 +210,6 @@
 
         const avatars = ['🦊', '🐶', '🐱', '🐼', '🐯', '🐰', '🐹', '🐨'];
 
-        // 클라이언트 로컬 상태
         const appState = {
             player: { id: null, name: '', isHost: false, score: 0, avatar: '' },
             room: { code: '', players: [], status: 'lobby' },
@@ -364,7 +353,6 @@
                 const drawer = appState.room.players[drawerIndex];
                 appState.game.currentDrawerId = drawer.id;
                 
-                // 24개의 문제 중 무작위 출제
                 appState.game.currentProblem = gameData[Math.floor(Math.random() * gameData.length)];
 
                 socket.emit('clearCanvas', appState.room.code);
@@ -431,14 +419,35 @@
                 }
 
                 if (isMeDrawer) {
-                    drawerArea.classList.remove('hidden'); guesserArea.classList.add('hidden'); tools.classList.remove('hidden'); notice.classList.remove('hidden');
+                    // 방장(출제자) UI 강제 노출
+                    drawerArea.classList.remove('hidden'); 
+                    drawerArea.style.display = 'block';
+                    
+                    guesserArea.classList.add('hidden'); 
+                    guesserArea.style.display = 'none';
+                    
+                    tools.classList.remove('hidden'); 
+                    notice.classList.remove('hidden');
+                    
                     document.getElementById('secretSituation').innerText = appState.game.currentProblem.situation;
                     document.getElementById('secretEmotion').innerText = appState.game.currentProblem.emotion;
                     document.getElementById('chatInput').placeholder = "힌트 입력 (감정 단어 금지!)";
                     this.ctx.isDrawingEnabled = appState.game.isRoundActive;
                 } else {
-                    drawerArea.classList.add('hidden'); guesserArea.classList.remove('hidden'); tools.classList.add('hidden'); notice.classList.add('hidden');
-                    document.getElementById('guessSituation').innerText = appState.game.currentProblem.situation;
+                    // 참가자 UI 노출 및 제시어 블라인드 처리
+                    drawerArea.classList.add('hidden'); 
+                    drawerArea.style.display = 'none';
+                    
+                    guesserArea.classList.remove('hidden'); 
+                    guesserArea.style.display = 'block';
+                    
+                    tools.classList.add('hidden'); 
+                    notice.classList.add('hidden');
+                    
+                    const wordLength = appState.game.currentProblem.emotion.length;
+                    const hintStr = "O ".repeat(wordLength).trim();
+                    document.getElementById('guessSituation').innerHTML = `상황: ${appState.game.currentProblem.situation} <br><span class="text-brand-pink mt-2 block text-xl">글자수 힌트: ${hintStr}</span>`;
+                    
                     document.getElementById('chatInput').placeholder = "정답이나 채팅 입력...";
                     this.ctx.isDrawingEnabled = false;
                 }
@@ -463,34 +472,35 @@
 
                     if (appState.game.isRoundActive) {
                         if (isMeDrawer) {
-                            const forbidden = appState.game.currentProblem.words;
+                            const forbidden = appState.game.currentProblem.words.concat([appState.game.currentProblem.emotion]);
                             if (forbidden.some(w => msg.includes(w))) {
-                                alert("🚨 감정 단어 사용 금지! (감점 5점)");
+                                alert("🚨 정답 관련 단어 사용 금지! (감점 5점)");
                                 const me = appState.room.players.find(p=>p.id===socket.id);
                                 me.score = Math.max(0, me.score - 5);
                                 if(appState.player.isHost) this.syncState(); 
                                 input.value = ''; return;
                             }
-                        } else {
-                            if (msg === appState.game.currentProblem.emotion && !appState.game.guessedCorrectly.includes(socket.id)) {
-                                socket.emit('chatMessage', { roomCode: appState.room.code, message: msg, isHint: false });
-                                if(appState.player.isHost) {
-                                    this.processCorrectAnswer(socket.id);
-                                }
-                                input.value = ''; return;
-                            }
                         }
                     }
 
+                    // 모든 채팅 메시지를 일단 서버로 전송합니다.
                     socket.emit('chatMessage', { roomCode: appState.room.code, message: msg, isHint: isMeDrawer });
                     input.value = '';
                 });
             },
 
             renderChatMessage(sender, msg, isHint) {
-                if(appState.player.isHost && appState.game.isRoundActive && sender.id !== appState.game.currentDrawerId) {
-                    if(msg === appState.game.currentProblem.emotion && !appState.game.guessedCorrectly.includes(sender.id)) {
-                        this.processCorrectAnswer(sender.id);
+                // 1. 정답 스포일러 차단 로직 (채팅이 화면에 그려지기 직전에 가로챔)
+                if(appState.game.isRoundActive && appState.game.currentProblem && sender.id !== appState.game.currentDrawerId) {
+                    const problem = appState.game.currentProblem;
+                    const isCorrect = msg === problem.emotion || problem.words.some(w => msg.includes(w));
+                    
+                    if (isCorrect) {
+                        // 호스트만 점수 처리를 담당합니다.
+                        if(appState.player.isHost && !appState.game.guessedCorrectly.includes(sender.id)) {
+                            this.processCorrectAnswer(sender.id);
+                        }
+                        // 정답이 포함된 채팅은 화면에 출력하지 않고 숨깁니다!
                         return; 
                     }
                 }
@@ -550,13 +560,14 @@
 
                 const startDrawing = (e) => {
                     if (!this.ctx.isDrawingEnabled) return;
+                    e.preventDefault(); // 2. 스마트폰 터치 시 화면 새로고침/스크롤 차단
                     isDrawing = true;
                     const pos = getPos(e); [lastX, lastY] = [pos.x, pos.y];
                 };
 
                 const draw = (e) => {
                     if (!isDrawing || !this.ctx.isDrawingEnabled) return;
-                    e.preventDefault();
+                    e.preventDefault(); // 2. 그리는 도중 화면 스크롤 차단
                     const pos = getPos(e);
                     
                     this.drawLine(lastX, lastY, pos.x, pos.y, currentColor, currentMode === 'eraser');
@@ -569,11 +580,14 @@
                     [lastX, lastY] = [pos.x, pos.y];
                 };
 
-                const stopDrawing = () => isDrawing = false;
+                const stopDrawing = (e) => {
+                    if (e) e.preventDefault();
+                    isDrawing = false;
+                };
 
                 canvas.addEventListener('mousedown', startDrawing); canvas.addEventListener('mousemove', draw);
                 canvas.addEventListener('mouseup', stopDrawing); canvas.addEventListener('mouseout', stopDrawing);
-                canvas.addEventListener('touchstart', startDrawing, {passive: false}); canvas.addEventListener('touchmove', draw, {passive: false}); canvas.addEventListener('touchend', stopDrawing);
+                canvas.addEventListener('touchstart', startDrawing, {passive: false}); canvas.addEventListener('touchmove', draw, {passive: false}); canvas.addEventListener('touchend', stopDrawing, {passive: false});
 
                 socket.on('drawUpdate', (data) => {
                     const ratioX = canvas.width / data.cw;
@@ -615,5 +629,7 @@
 
         window.onload = () => app.init();
     </script>
+</body>
+</html>
 </body>
 </html>
